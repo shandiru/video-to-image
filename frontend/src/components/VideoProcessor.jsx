@@ -24,7 +24,7 @@ import { saveAs } from 'file-saver';
 import { jsPDF } from 'jspdf';
 
 // Hardcoded per project constraints — no .env files, no dynamic config.
-const API_BASE_URL = 'http://localhost:6000';
+const API_BASE_URL = 'http://localhost:5000';
 
 // ----------------------------------------------------------------------------
 // Small presentational helpers
@@ -150,7 +150,7 @@ export default function VideoProcessor() {
     setVideoFile(file);
     setVideoURL(newUrl);
     setVideoMeta({ duration: 0, width: 0, height: 0 });
-    setFrames([]); // clear previous frames — each holds a full-resolution base64 JPEG string
+    setFrames([]); // clear previous frames — each holds a full-resolution base64 WebP string
     setErrorMessage('');
     setProgress({ done: 0, total: 0 });
   }, []);
@@ -177,9 +177,14 @@ export default function VideoProcessor() {
     const SAFETY_MARGIN = 0.05; // stay slightly clear of the exact end-of-stream
 
     if (mode === 'interval') {
-      const step = Math.max(0.1, Number(intervalSeconds) || 1);
+      // NOTE: browsers cannot actually decode distinct frames faster than the
+      // source video's own frame rate (commonly ~1/24s–1/60s). Steps smaller
+      // than that will frequently land on the same decoded frame — the
+      // 'seeked' event still fires correctly, but consecutive frames may be
+      // visually identical. We still honor arbitrarily small steps here.
+      const step = Math.max(0.000001, Number(intervalSeconds) || 1);
       for (let t = 0; t < duration - SAFETY_MARGIN; t += step) {
-        timestamps.push(Number(t.toFixed(3)));
+        timestamps.push(Number(t.toFixed(6)));
       }
       // Always guarantee at least one frame for very short clips.
       if (timestamps.length === 0) timestamps.push(0);
@@ -283,9 +288,11 @@ export default function VideoProcessor() {
         // Draw the currently-decoded frame at full native resolution.
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // Maximum fidelity export — quality argument of 1.0 disables any
-        // additional JPEG compression Chrome/Firefox would otherwise apply.
-        const dataUrl = canvas.toDataURL('image/jpeg', 1.0);
+        // Maximum fidelity export — quality argument of 1.0 requests the
+        // highest-quality WebP encoding the browser supports (WebP gives
+        // better quality-per-byte than JPEG at the same quality setting,
+        // and supports alpha if the source ever needs it).
+        const dataUrl = canvas.toDataURL('image/webp', 1.0);
 
         collected.push({
           id: i + 1,
@@ -322,10 +329,10 @@ export default function VideoProcessor() {
       const folder = zip.folder('frames');
 
       frames.forEach((frame) => {
-        // Strip the "data:image/jpeg;base64," prefix — JSZip wants raw base64.
+        // Strip the "data:image/webp;base64," prefix — JSZip wants raw base64.
         const base64Data = frame.dataUrl.split(',')[1];
         const paddedIndex = String(frame.id).padStart(3, '0');
-        folder.file(`frame_${paddedIndex}.jpg`, base64Data, { base64: true });
+        folder.file(`frame_${paddedIndex}.webp`, base64Data, { base64: true });
       });
 
       const blob = await zip.generateAsync({
@@ -389,7 +396,7 @@ export default function VideoProcessor() {
         const x = (pageWidth - drawWidth) / 2;
         const y = margin + (usableHeight - drawHeight) / 2;
 
-        pdf.addImage(frame.dataUrl, 'JPEG', x, y, drawWidth, drawHeight, undefined, 'FAST');
+        pdf.addImage(frame.dataUrl, 'WEBP', x, y, drawWidth, drawHeight, undefined, 'FAST');
 
         // Caption: frame number + timestamp, centered beneath the image.
         pdf.setFontSize(9);
@@ -525,19 +532,45 @@ export default function VideoProcessor() {
                   <div>
                     <label className="mb-2 block text-xs font-medium text-slate-400">
                       Capture 1 frame every{' '}
-                      <span className="font-mono text-indigo-300">{intervalSeconds}s</span>
+                      <span className="font-mono text-indigo-300">
+                        {intervalSeconds < 0.01 ? Number(intervalSeconds).toFixed(6) : Number(intervalSeconds).toFixed(2)}s
+                      </span>
                     </label>
+
+                    {/* Slider gives a fast, continuous drag from 0.000001s up
+                        to 10s. NOTE: browsers cannot actually decode distinct
+                        frames faster than the source video's own frame rate
+                        (commonly ~1/24s–1/60s) — sub-frame-rate steps are
+                        honored, but consecutive captures may repeat the same
+                        decoded frame. See buildTimestamps() for details. */}
                     <input
                       type="range"
-                      min="0.1"
+                      min="0.000001"
                       max="10"
-                      step="0.1"
+                      step="0.000001"
                       value={intervalSeconds}
-                      onChange={(e) => setIntervalSeconds(parseFloat(e.target.value))}
+                      onChange={(e) => setIntervalSeconds(Number(parseFloat(e.target.value).toFixed(6)))}
                       className="mb-3 w-full accent-indigo-500"
                     />
+
+                    {/* Direct numeric entry — far more practical than
+                        dragging a slider when the target step is a tiny
+                        fraction of a second. */}
+                    <input
+                      type="number"
+                      min="0.000001"
+                      max="10"
+                      step="0.000001"
+                      value={intervalSeconds}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        if (!Number.isNaN(v)) setIntervalSeconds(Math.max(0.000001, v));
+                      }}
+                      className="mb-3 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 font-mono text-xs text-slate-200 focus:border-indigo-400/50 focus:outline-none"
+                    />
+
                     <div className="flex flex-wrap gap-2">
-                      {[0.5, 1, 2, 5].map((val) => (
+                      {[0.000001, 0.0001, 0.001, 0.01, 0.1, 0.5, 1, 2, 5].map((val) => (
                         <button
                           key={val}
                           type="button"
