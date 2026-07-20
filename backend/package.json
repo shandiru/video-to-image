@@ -1,0 +1,16 @@
+{
+  "name": "video-to-frames-suite-backend",
+  "version": "1.0.0",
+  "description": "Minimal Express backend/status API for the Video-to-Frames Suite. All heavy processing happens client-side.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
