@@ -24,7 +24,7 @@ import { saveAs } from 'file-saver';
 import { jsPDF } from 'jspdf';
 
 // Hardcoded per project constraints — no .env files, no dynamic config.
-const API_BASE_URL = 'https://video-to-image-tclx.vercel.app';
+const API_BASE_URL = 'https://video-to-image-tclx.vercel.app/';
 
 // ----------------------------------------------------------------------------
 // Small presentational helpers
